@@ -1,0 +1,427 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Bazar 69 · Inventario</title>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=IBM+Plex+Mono:wght@500;600;700&family=Inter:wght@400;500;600&display=swap');
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  min-height: 100vh;
+  background: #F7F2E7;
+  background-image: radial-gradient(circle at 1px 1px, rgba(42,33,24,0.05) 1px, transparent 0);
+  background-size: 18px 18px;
+  font-family: 'Inter', sans-serif;
+  color: #2A2118;
+  padding: 18px 14px 60px;
+}
+.wrap { max-width: 480px; margin: 0 auto; }
+.header { text-align: center; margin-bottom: 16px; }
+.eyebrow {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 11px; letter-spacing: 0.18em; text-transform: uppercase;
+  color: #8A7A5E; margin-bottom: 4px;
+}
+.title { font-family: 'Fraunces', serif; font-weight: 700; font-size: 28px; }
+.subtitle { font-size: 13px; color: #6B5D46; margin-top: 4px; }
+
+.totals {
+  background: #2A2118; color: #F7F2E7; border-radius: 14px;
+  padding: 16px 18px; margin-bottom: 16px; position: relative; overflow: hidden;
+}
+.totals::before {
+  content: ''; position: absolute; top: -20px; right: -20px;
+  width: 90px; height: 90px; border-radius: 50%; background: rgba(201,138,44,0.18);
+}
+.totals-label {
+  font-family: 'IBM Plex Mono', monospace; font-size: 11px; letter-spacing: 0.1em;
+  text-transform: uppercase; color: #C98A2C;
+}
+.totals-value { font-family: 'Fraunces', serif; font-size: 34px; font-weight: 600; margin: 2px 0 10px; }
+.totals-split { display: flex; gap: 18px; font-family: 'IBM Plex Mono', monospace; font-size: 12.5px; }
+.dot { display:inline-block; width:8px; height:8px; border-radius:50%; margin-right:6px; }
+
+.tabs { display: flex; gap: 6px; overflow-x: auto; margin-bottom: 14px; padding-bottom: 2px; }
+.tab {
+  font-family: 'IBM Plex Mono', monospace; font-size: 12px; padding: 8px 14px;
+  border-radius: 999px; border: 1.5px solid #2A2118; background: transparent;
+  color: #2A2118; white-space: nowrap; cursor: pointer;
+}
+.tab.active { background: #2A2118; color: #F7F2E7; }
+
+.add-btn {
+  width: 100%; padding: 13px; border-radius: 12px; border: none;
+  background: #C98A2C; color: #2A2118; font-family: 'IBM Plex Mono', monospace;
+  font-weight: 700; font-size: 14px; letter-spacing: 0.02em; cursor: pointer; margin-bottom: 16px;
+}
+.form-card {
+  background: #FFFDF8; border: 1.5px dashed #C9A87C; border-radius: 14px;
+  padding: 16px; margin-bottom: 18px; display: none;
+}
+.form-card.open { display: block; }
+.field { margin-bottom: 12px; }
+.field label { display: block; font-size: 12px; font-weight: 600; margin-bottom: 5px; color: #6B5D46; }
+.field input {
+  width: 100%; padding: 10px 12px; border-radius: 9px; border: 1.5px solid #D9C7A3;
+  background: #fff; font-size: 15px; font-family: 'Inter', sans-serif;
+}
+.owner-pick { display: flex; gap: 8px; }
+.owner-opt {
+  flex: 1; padding: 10px; text-align: center; border-radius: 9px;
+  border: 1.5px solid #D9C7A3; cursor: pointer; font-size: 13px; font-weight: 600;
+}
+.owner-opt.sel-mayra { background: #F6E4EA; border-color: #C1587A; color: #8C3F5A; }
+.owner-opt.sel-papa { background: #E3EEEC; border-color: #2E6B63; color: #204F49; }
+.form-actions { display: flex; gap: 8px; margin-top: 6px; }
+.btn-primary, .btn-ghost {
+  flex: 1; padding: 11px; border-radius: 9px; font-family: 'IBM Plex Mono', monospace;
+  font-size: 13px; font-weight: 600; cursor: pointer; border: none;
+}
+.btn-primary { background: #2A2118; color: #F7F2E7; }
+.btn-ghost { background: transparent; border: 1.5px solid #2A2118; color: #2A2118; }
+
+.card {
+  position: relative; background: #FFFDF8; border-radius: 4px 14px 14px 4px;
+  padding: 14px 14px 14px 20px; margin-bottom: 10px;
+  box-shadow: 0 1px 0 rgba(42,33,24,0.06); border: 1px solid #EAE0C9; overflow: hidden;
+}
+.card::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 6px; }
+.card.mayra::before { background: #C1587A; }
+.card.papa::before { background: #2E6B63; }
+.card-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; }
+.code { font-family: 'IBM Plex Mono', monospace; font-weight: 700; font-size: 15px; letter-spacing: 0.02em; }
+.owner-tag {
+  font-family: 'IBM Plex Mono', monospace; font-size: 10.5px; padding: 3px 8px;
+  border-radius: 999px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em;
+}
+.name { font-family: 'Fraunces', serif; font-size: 17px; font-weight: 600; margin: 4px 0 2px; }
+.price-row { display: flex; justify-content: space-between; align-items: baseline; margin-top: 8px; }
+.price { font-family: 'IBM Plex Mono', monospace; font-size: 20px; font-weight: 700; color: #C98A2C; }
+.price.sold { color: #A63D2F; }
+.meta { font-size: 11.5px; color: #8A7A5E; }
+.actions { display: flex; gap: 6px; margin-top: 10px; flex-wrap: wrap; }
+.mini-btn {
+  font-family: 'IBM Plex Mono', monospace; font-size: 11.5px; padding: 7px 10px;
+  border-radius: 7px; border: 1.3px solid #2A2118; background: transparent; cursor: pointer;
+}
+.mini-btn.danger { border-color: #A63D2F; color: #A63D2F; }
+.mini-btn.solid { background: #2A2118; color: #F7F2E7; }
+.stamp {
+  position: absolute; right: 10px; top: 14px; font-family: 'IBM Plex Mono', monospace;
+  font-weight: 700; font-size: 12px; color: #A63D2F; border: 2px solid #A63D2F;
+  border-radius: 6px; padding: 3px 8px; transform: rotate(-9deg); opacity: 0.85;
+}
+.inline-form {
+  margin-top: 10px; background: #F7F2E7; border-radius: 9px; padding: 10px;
+  display: none; gap: 8px; align-items: center;
+}
+.inline-form.open { display: flex; }
+.inline-form input {
+  flex: 1; padding: 8px 10px; border-radius: 7px; border: 1.5px solid #D9C7A3;
+  font-family: 'IBM Plex Mono', monospace; font-size: 14px;
+}
+.empty { text-align: center; padding: 30px 16px; color: #8A7A5E; font-size: 13.5px; }
+.error-banner { background: #FBE4E0; color: #A63D2F; padding: 10px 14px; border-radius: 9px; font-size: 12.5px; margin-bottom: 12px; display: none; }
+.error-banner.show { display: block; }
+.saving-tag { font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: #C98A2C; text-align: center; margin-bottom: 8px; display: none; }
+.saving-tag.show { display: block; }
+.footer-note { text-align: center; font-size: 11.5px; color: #8A7A5E; margin-top: 24px; line-height: 1.6; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="header">
+    <div class="eyebrow">Bazar 69 · Inventario compartido</div>
+    <h1 class="title">Existencias en vivo</h1>
+    <div class="subtitle">Se actualiza solo — Mayra ve los mismos cambios desde su celular</div>
+  </div>
+
+  <div class="error-banner" id="errorBanner"></div>
+  <div class="saving-tag" id="savingTag">Guardando…</div>
+
+  <div class="totals">
+    <div class="totals-label">Total esperado en existencias</div>
+    <div class="totals-value" id="totalGeneral">$0</div>
+    <div class="totals-split">
+      <span><span class="dot" style="background:#C1587A"></span>Mayra: <span id="totalMayra">$0</span></span>
+      <span><span class="dot" style="background:#2E6B63"></span>Papá: <span id="totalPapa">$0</span></span>
+    </div>
+  </div>
+
+  <div class="tabs">
+    <button class="tab active" data-filter="todos">Disponibles</button>
+    <button class="tab" data-filter="mayra">Mayra</button>
+    <button class="tab" data-filter="papa">Papá</button>
+    <button class="tab" data-filter="vendidos">Vendidos</button>
+  </div>
+
+  <button class="add-btn" id="addBtn">+ Agregar producto</button>
+
+  <form class="form-card" id="formCard">
+    <div class="field">
+      <label>Producto</label>
+      <input type="text" id="fName" placeholder="Ej. Silla de madera tallada" required />
+    </div>
+    <div class="field">
+      <label>Precio de lista</label>
+      <input type="number" id="fPrice" placeholder="Ej. 450" min="0" required />
+    </div>
+    <div class="field">
+      <label>Pertenece a</label>
+      <div class="owner-pick">
+        <div class="owner-opt sel-mayra" id="ownerMayra" data-owner="mayra">Mayra</div>
+        <div class="owner-opt" id="ownerPapa" data-owner="papa">Papá</div>
+      </div>
+    </div>
+    <div class="form-actions">
+      <button type="button" class="btn-ghost" id="cancelBtn">Cancelar</button>
+      <button type="submit" class="btn-primary">Guardar producto</button>
+    </div>
+  </form>
+
+  <div id="list"></div>
+
+  <div class="footer-note">
+    Usa el código (ej. B69-0001) como nombre de carpeta para guardar la foto del producto.
+  </div>
+</div>
+
+<script>
+const firebaseConfig = {
+  apiKey: "AIzaSyCiTmM7G8bW7k_yDB8G90JWhoQjN6BQWTk",
+  authDomain: "bazar69-inventario.firebaseapp.com",
+  databaseURL: "https://bazar69-inventario-default-rtdb.firebaseio.com/",
+  projectId: "bazar69-inventario",
+  storageBucket: "bazar69-inventario.firebasestorage.app",
+  messagingSenderId: "730883515964",
+  appId: "1:730883515964:web:e32982282cbfede14e4539"
+};
+
+firebase.initializeApp(firebaseConfig);
+const db = firebase.database();
+const productsRef = db.ref('productos');
+
+const OWNERS = {
+  mayra: { label: "Mayra", color: "#C1587A", tint: "#F6E4EA" },
+  papa: { label: "Papá", color: "#2E6B63", tint: "#E3EEEC" },
+};
+
+let products = {};
+let filter = "todos";
+let selectedOwner = "mayra";
+
+function formatMoney(n) {
+  const v = Number(n) || 0;
+  return v.toLocaleString("es-MX", { style: "currency", currency: "MXN", maximumFractionDigits: 0 });
+}
+function todayStr() {
+  return new Date().toLocaleDateString("es-MX", { day: "2-digit", month: "short", year: "numeric" });
+}
+function nextCode() {
+  let max = 0;
+  Object.values(products).forEach(p => {
+    const m = /B69-(\d+)/.exec(p.codigo);
+    if (m) max = Math.max(max, parseInt(m[1], 10));
+  });
+  return `B69-${String(max + 1).padStart(4, "0")}`;
+}
+function showError(msg) {
+  const el = document.getElementById('errorBanner');
+  if (!msg) { el.classList.remove('show'); return; }
+  el.textContent = msg;
+  el.classList.add('show');
+}
+function showSaving(on) {
+  document.getElementById('savingTag').classList.toggle('show', on);
+}
+
+productsRef.on('value', (snap) => {
+  products = snap.val() || {};
+  render();
+}, (err) => {
+  showError("No se pudo conectar con la base de datos. Revisa tu conexión.");
+});
+
+function render() {
+  const list = Object.values(products);
+  const disponibles = list.filter(p => p.estado === "disponible");
+  const vendidos = list.filter(p => p.estado === "vendido");
+
+  const totalMayra = disponibles.filter(p => p.dueno === "mayra").reduce((s,p) => s + p.precio_lista, 0);
+  const totalPapa = disponibles.filter(p => p.dueno === "papa").reduce((s,p) => s + p.precio_lista, 0);
+
+  document.getElementById('totalGeneral').textContent = formatMoney(totalMayra + totalPapa);
+  document.getElementById('totalMayra').textContent = formatMoney(totalMayra);
+  document.getElementById('totalPapa').textContent = formatMoney(totalPapa);
+
+  let visible;
+  if (filter === "mayra") visible = disponibles.filter(p => p.dueno === "mayra");
+  else if (filter === "papa") visible = disponibles.filter(p => p.dueno === "papa");
+  else if (filter === "vendidos") visible = vendidos.slice().sort((a,b) => (a.fecha_venta < b.fecha_venta ? 1 : -1));
+  else visible = disponibles;
+
+  const container = document.getElementById('list');
+  container.innerHTML = "";
+
+  if (visible.length === 0) {
+    const empty = document.createElement('div');
+    empty.className = "empty";
+    empty.textContent = filter === "vendidos" ? "Todavía no hay productos vendidos." : "No hay productos en esta categoría todavía.";
+    container.appendChild(empty);
+    return;
+  }
+
+  visible.forEach(p => container.appendChild(buildCard(p)));
+}
+
+function buildCard(p) {
+  const card = document.createElement('div');
+  card.className = `card ${p.dueno}`;
+
+  let stampHtml = p.estado === "vendido" ? `<div class="stamp">VENDIDO</div>` : "";
+  let priceExtra = "";
+  if (p.estado === "vendido" && p.precio_venta !== p.precio_lista) {
+    priceExtra = `<span class="meta">lista: ${formatMoney(p.precio_lista)}</span>`;
+  }
+
+  card.innerHTML = `
+    ${stampHtml}
+    <div class="card-top">
+      <span class="code">${p.codigo}</span>
+      <span class="owner-tag" style="background:${OWNERS[p.dueno].tint};color:${OWNERS[p.dueno].color}">${OWNERS[p.dueno].label}</span>
+    </div>
+    <div class="name">${p.nombre}</div>
+    <div class="meta">Alta: ${p.fecha_alta}${p.fecha_venta ? ` · Vendido: ${p.fecha_venta}` : ""}</div>
+    <div class="price-row">
+      <span class="price ${p.estado === 'vendido' ? 'sold' : ''}">${formatMoney(p.estado === 'vendido' ? p.precio_venta : p.precio_lista)}</span>
+      ${priceExtra}
+    </div>
+    <div class="actions" id="actions-${p.id}"></div>
+    <div class="inline-form" id="sellForm-${p.id}">
+      <input type="number" id="sellInput-${p.id}" value="${p.precio_lista}" min="0" />
+      <button class="mini-btn solid" data-action="confirmSell" data-id="${p.id}">Confirmar</button>
+      <button class="mini-btn" data-action="cancelSell" data-id="${p.id}">Cancelar</button>
+    </div>
+    <div class="inline-form" id="editForm-${p.id}">
+      <input type="number" id="editInput-${p.id}" value="${p.precio_lista}" min="0" />
+      <button class="mini-btn solid" data-action="confirmEdit" data-id="${p.id}">Confirmar</button>
+      <button class="mini-btn" data-action="cancelEdit" data-id="${p.id}">Cancelar</button>
+    </div>
+  `;
+
+  const actions = card.querySelector(`#actions-${p.id}`);
+  if (p.estado === "disponible") {
+    actions.innerHTML = `
+      <button class="mini-btn solid" data-action="openSell" data-id="${p.id}">Marcar vendido</button>
+      <button class="mini-btn" data-action="openEdit" data-id="${p.id}">Ajustar precio</button>
+      <button class="mini-btn danger" data-action="remove" data-id="${p.id}">Eliminar</button>
+    `;
+  } else {
+    actions.innerHTML = `
+      <button class="mini-btn" data-action="reactivate" data-id="${p.id}">Regresar a disponible</button>
+      <button class="mini-btn danger" data-action="remove" data-id="${p.id}">Eliminar</button>
+    `;
+  }
+  return card;
+}
+
+document.getElementById('list').addEventListener('click', (e) => {
+  const btn = e.target.closest('button[data-action]');
+  if (!btn) return;
+  const id = btn.dataset.id;
+  const action = btn.dataset.action;
+  const p = products[id];
+
+  if (action === "openSell") {
+    document.getElementById(`sellForm-${id}`).classList.add('open');
+  } else if (action === "cancelSell") {
+    document.getElementById(`sellForm-${id}`).classList.remove('open');
+  } else if (action === "confirmSell") {
+    const val = document.getElementById(`sellInput-${id}`).value;
+    if (!val || Number(val) < 0) return;
+    save(id, { ...p, estado: "vendido", precio_venta: Number(val), fecha_venta: todayStr() });
+  } else if (action === "openEdit") {
+    document.getElementById(`editForm-${id}`).classList.add('open');
+  } else if (action === "cancelEdit") {
+    document.getElementById(`editForm-${id}`).classList.remove('open');
+  } else if (action === "confirmEdit") {
+    const val = document.getElementById(`editInput-${id}`).value;
+    if (!val || Number(val) <= 0) return;
+    save(id, { ...p, precio_lista: Number(val) });
+  } else if (action === "reactivate") {
+    save(id, { ...p, estado: "disponible", precio_venta: null, fecha_venta: null });
+  } else if (action === "remove") {
+    if (confirm(`¿Eliminar ${p.codigo} - ${p.nombre}?`)) {
+      showSaving(true);
+      productsRef.child(id).remove()
+        .then(() => showSaving(false))
+        .catch(() => { showSaving(false); showError("No se pudo eliminar. Intenta otra vez."); });
+    }
+  }
+});
+
+function save(id, data) {
+  showSaving(true);
+  productsRef.child(id).set(data)
+    .then(() => { showSaving(false); showError(null); })
+    .catch(() => { showSaving(false); showError("No se guardó el cambio. Revisa tu conexión e intenta otra vez."); });
+}
+
+document.querySelectorAll('.tab').forEach(tab => {
+  tab.addEventListener('click', () => {
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    tab.classList.add('active');
+    filter = tab.dataset.filter;
+    render();
+  });
+});
+
+document.getElementById('addBtn').addEventListener('click', () => {
+  document.getElementById('formCard').classList.add('open');
+  document.getElementById('addBtn').style.display = 'none';
+});
+document.getElementById('cancelBtn').addEventListener('click', () => {
+  document.getElementById('formCard').classList.remove('open');
+  document.getElementById('addBtn').style.display = 'block';
+});
+document.getElementById('ownerMayra').addEventListener('click', () => {
+  selectedOwner = 'mayra';
+  document.getElementById('ownerMayra').classList.add('sel-mayra');
+  document.getElementById('ownerPapa').classList.remove('sel-papa');
+});
+document.getElementById('ownerPapa').addEventListener('click', () => {
+  selectedOwner = 'papa';
+  document.getElementById('ownerPapa').classList.add('sel-papa');
+  document.getElementById('ownerMayra').classList.remove('sel-mayra');
+});
+
+document.getElementById('formCard').addEventListener('submit', (e) => {
+  e.preventDefault();
+  const name = document.getElementById('fName').value.trim();
+  const price = document.getElementById('fPrice').value;
+  if (!name || !price || Number(price) <= 0) return;
+
+  const codigo = nextCode();
+  const id = codigo;
+  const nuevo = {
+    id, codigo, nombre: name, dueno: selectedOwner, precio_lista: Number(price),
+    estado: "disponible", precio_venta: null, fecha_alta: todayStr(), fecha_venta: null
+  };
+  showSaving(true);
+  productsRef.child(id).set(nuevo)
+    .then(() => {
+      showSaving(false);
+      document.getElementById('fName').value = "";
+      document.getElementById('fPrice').value = "";
+      document.getElementById('formCard').classList.remove('open');
+      document.getElementById('addBtn').style.display = 'block';
+    })
+    .catch(() => { showSaving(false); showError("No se guardó el producto. Intenta otra vez."); });
+});
+</script>
+</body>
+  </html>
