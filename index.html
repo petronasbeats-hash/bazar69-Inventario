@@ -6,7 +6,7 @@
 <title>Bazar 69 · Panel</title>
 <link rel="manifest" href="manifest.json" />
 <meta name="theme-color" content="#2A2118" />
-<link rel="apple-touch-icon" href="icon-192.png" />
+<link rel="apple-touch-icon" href="icon-192-1.png" />
 <meta name="apple-mobile-web-app-capable" content="yes" />
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
 <meta name="apple-mobile-web-app-title" content="Bazar 69" />
@@ -528,7 +528,7 @@ document.getElementById('notifyBtn').addEventListener('click', async () => {
   if (perm === 'granted') {
     notifyEnabled = true;
     localStorage.setItem('bazar69notify', '1');
-    new Notification("Bazar 69", { body: "Notificaciones activadas ✅", icon: "icon-192.png" });
+    new Notification("Bazar 69", { body: "Notificaciones activadas ✅", icon: "icon-192-1.png" });
   } else {
     alert("No se activaron las notificaciones. Puedes intentarlo de nuevo desde este botón.");
   }
@@ -539,9 +539,9 @@ function notify(title, body) {
   if (notifyEnabled && Notification.permission === 'granted') {
     try {
       if (navigator.serviceWorker && navigator.serviceWorker.controller) {
-        navigator.serviceWorker.ready.then(reg => reg.showNotification(title, { body, icon: "icon-192.png" }));
+        navigator.serviceWorker.ready.then(reg => reg.showNotification(title, { body, icon: "icon-192-1.png" }));
       } else {
-        new Notification(title, { body, icon: "icon-192.png" });
+        new Notification(title, { body, icon: "icon-192-1.png" });
       }
     } catch (e) {}
   }
