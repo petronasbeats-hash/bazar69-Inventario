@@ -191,6 +191,33 @@ body {
 }
 .log-date { font-family: 'Fraunces', serif; font-weight: 600; }
 .log-times { font-family: 'IBM Plex Mono', monospace; font-size: 12px; color: #6B5D46; }
+.log-row-special { flex-direction: column; align-items: stretch; gap: 4px; }
+.log-row-special .log-top { display: flex; justify-content: space-between; align-items: center; }
+.log-badge {
+  font-family: 'IBM Plex Mono', monospace; font-size: 11px; font-weight: 700;
+  padding: 3px 9px; border-radius: 999px; background: #F0E6CC; color: #8A6A1E;
+}
+.log-badge.descanso { background: #E3EEEC; color: #204F49; }
+.log-motivo { font-size: 12px; color: #6B5D46; font-style: italic; }
+.btn-justificar {
+  width: 100%; margin-top: 8px; padding: 11px; border-radius: 10px;
+  border: 1.5px dashed #C98A2C; background: transparent; color: #C98A2C;
+  font-family: 'IBM Plex Mono', monospace; font-weight: 700; font-size: 12.5px; cursor: pointer;
+}
+.justificar-form {
+  display: none; background: #FFFDF8; border: 1px solid #EAE0C9; border-radius: 12px;
+  padding: 14px; margin-top: 10px;
+}
+.justificar-form.open { display: block; }
+.justificar-form .field { margin-bottom: 10px; }
+.justificar-form label { display: block; font-size: 12px; font-weight: 600; margin-bottom: 5px; color: #6B5D46; }
+.justificar-form input, .justificar-form select, .justificar-form textarea {
+  width: 100%; padding: 10px 12px; border-radius: 9px; border: 1.5px solid #D9C7A3;
+  background: #fff; font-size: 14px; font-family: 'Inter', sans-serif;
+}
+.justificar-form textarea { resize: vertical; min-height: 60px; }
+.justificar-actions { display: flex; gap: 8px; }
+.justificar-actions button { flex: 1; padding: 11px; border-radius: 10px; border: none; font-family: 'IBM Plex Mono', monospace; font-weight: 700; font-size: 13px; cursor: pointer; }
 
 /* Chat */
 .whoami { display: flex; gap: 8px; margin-bottom: 14px; }
@@ -454,6 +481,28 @@ body {
       <div class="bitacora-actions">
         <button class="btn-abrir" id="btnAbrir">Marcar apertura</button>
         <button class="btn-cerrar" id="btnCerrar">Marcar cierre</button>
+      </div>
+      <button class="btn-justificar" id="btnJustificar">📝 Justificar / marcar descanso de un día</button>
+      <div class="justificar-form" id="justificarForm">
+        <div class="field">
+          <label>Fecha</label>
+          <input type="date" id="justFecha" />
+        </div>
+        <div class="field">
+          <label>Tipo de día</label>
+          <select id="justTipo">
+            <option value="justificado">Justificado (se trabajó, sin registro)</option>
+            <option value="descanso">Descanso</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>Motivo</label>
+          <textarea id="justMotivo" placeholder="Ej. Se trabajó, la app aún no existía"></textarea>
+        </div>
+        <div class="justificar-actions">
+          <button class="btn-abrir" id="justGuardar">Guardar</button>
+          <button class="btn-cerrar" id="justCancelar">Cancelar</button>
+        </div>
       </div>
     </div>
     <div id="logList"></div>
@@ -951,12 +1000,26 @@ function renderBitacora() {
   keys.forEach(k => {
     const entry = bitacoraData[k];
     const row = document.createElement('div');
-    row.className = "log-row";
     const dateLabel = new Date(k + "T12:00:00").toLocaleDateString("es-MX", { weekday:'short', day:'2-digit', month:'short' });
-    row.innerHTML = `
-      <span class="log-date">${dateLabel}</span>
-      <span class="log-times">${entry.apertura || '—'} → ${entry.cierre || '—'}</span>
-    `;
+    if (entry.tipo === 'justificado' || entry.tipo === 'descanso') {
+      row.className = "log-row log-row-special";
+      const esDescanso = entry.tipo === 'descanso';
+      const badgeClass = esDescanso ? 'log-badge descanso' : 'log-badge';
+      const badgeTxt = esDescanso ? '😴 Descanso' : '📝 Justificado';
+      row.innerHTML = `
+        <div class="log-top">
+          <span class="log-date">${dateLabel}</span>
+          <span class="${badgeClass}">${badgeTxt}</span>
+        </div>
+        ${entry.motivo ? `<div class="log-motivo">${entry.motivo}</div>` : ''}
+      `;
+    } else {
+      row.className = "log-row";
+      row.innerHTML = `
+        <span class="log-date">${dateLabel}</span>
+        <span class="log-times">${entry.apertura || '—'} → ${entry.cierre || '—'}</span>
+      `;
+    }
     logList.appendChild(row);
   });
 }
@@ -976,6 +1039,31 @@ document.getElementById('btnCerrar').addEventListener('click', () => {
   bitacoraRef.child(tk).update({ cierre: nowTime() })
     .then(() => showSaving(false))
     .catch(() => { showSaving(false); showError("No se guardó el cierre."); });
+});
+
+document.getElementById('btnJustificar').addEventListener('click', () => {
+  if (!requireAdmin()) return;
+  document.getElementById('justificarForm').classList.toggle('open');
+});
+document.getElementById('justCancelar').addEventListener('click', () => {
+  document.getElementById('justificarForm').classList.remove('open');
+});
+document.getElementById('justGuardar').addEventListener('click', () => {
+  if (!requireAdmin()) return;
+  const fecha = document.getElementById('justFecha').value;
+  const tipo = document.getElementById('justTipo').value;
+  const motivo = document.getElementById('justMotivo').value.trim();
+  if (!fecha) { alert('Elige una fecha.'); return; }
+  if (!motivo) { alert('Escribe el motivo.'); return; }
+  showSaving(true);
+  bitacoraRef.child(fecha).update({ tipo, motivo })
+    .then(() => {
+      showSaving(false);
+      document.getElementById('justificarForm').classList.remove('open');
+      document.getElementById('justFecha').value = '';
+      document.getElementById('justMotivo').value = '';
+    })
+    .catch(() => { showSaving(false); showError('No se guardó la justificación.'); });
 });
 
 // ---------- CAJA (traspasos de efectivo) ----------
@@ -1198,7 +1286,7 @@ function weekDaysKeys(weekKey) {
 }
 
 function calcularNomina(weekKey) {
-  const dias = weekDaysKeys(weekKey).filter(k => bitacoraData[k] && bitacoraData[k].apertura).length;
+  const dias = weekDaysKeys(weekKey).filter(k => bitacoraData[k] && (bitacoraData[k].apertura || bitacoraData[k].tipo === 'justificado')).length;
   const saldoSemana = Math.min(dias * SALARIO_DIARIO, PAGO_SEMANAL_MAX);
   const entries = Object.entries(pagosNominaData).filter(([id, p]) => p.semana === weekKey);
   const confirmado = entries.filter(([id, p]) => p.estado === "confirmado").reduce((s,[id,p]) => s + (p.monto || 0), 0);
@@ -1224,15 +1312,23 @@ function renderNomina() {
   const keys = weekDaysKeys(weekKey);
   const now = new Date();
   keys.forEach((k, i) => {
-    const worked = !!(bitacoraData[k] && bitacoraData[k].apertura);
+    const bEntry = bitacoraData[k];
+    const esJustificado = !!(bEntry && bEntry.tipo === 'justificado');
+    const esDescanso = !!(bEntry && bEntry.tipo === 'descanso');
+    const worked = !!(bEntry && (bEntry.apertura || esJustificado));
     const isFuture = new Date(k + "T23:59:59") > now;
     const row = document.createElement('div');
     row.className = "log-row";
-    const pill = isFuture && !worked
-      ? `<span class="meta">—</span>`
-      : (worked
-          ? `<span class="status-pill status-abierto">Trabajado</span>`
-          : `<span class="status-pill status-ausente">No trabajado</span>`);
+    let pill;
+    if (esDescanso) {
+      pill = `<span class="log-badge descanso">😴 Descanso</span>`;
+    } else if (isFuture && !worked) {
+      pill = `<span class="meta">—</span>`;
+    } else if (worked) {
+      pill = `<span class="status-pill status-abierto">Trabajado${esJustificado ? ' (justificado)' : ''}</span>`;
+    } else {
+      pill = `<span class="status-pill status-ausente">No trabajado</span>`;
+    }
     row.innerHTML = `<span class="log-date">${NOMINA_DIAS[i]}</span>${pill}`;
     asisCont.appendChild(row);
   });
