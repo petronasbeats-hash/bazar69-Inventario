@@ -150,7 +150,7 @@ body {
 }
 .inline-form {
   margin-top: 10px; background: #F7F2E7; border-radius: 9px; padding: 10px;
-  display: none; gap: 8px; align-items: center;
+  display: none; gap: 8px; align-items: center; flex-wrap: wrap;
 }
 .inline-form.open { display: flex; }
 .inline-form input {
@@ -218,6 +218,12 @@ body {
 .justificar-form textarea { resize: vertical; min-height: 60px; }
 .justificar-actions { display: flex; gap: 8px; }
 .justificar-actions button { flex: 1; padding: 11px; border-radius: 10px; border: none; font-family: 'IBM Plex Mono', monospace; font-weight: 700; font-size: 13px; cursor: pointer; }
+.week-nav { display: flex; align-items: center; justify-content: center; gap: 12px; }
+.week-nav-btn {
+  background: rgba(255,255,255,0.12); color: inherit; border: none; border-radius: 8px;
+  width: 30px; height: 30px; font-size: 14px; cursor: pointer;
+}
+.week-nav-btn:disabled { opacity: 0.3; cursor: default; }
 
 /* Chat */
 .whoami { display: flex; gap: 8px; margin-bottom: 14px; }
@@ -429,7 +435,11 @@ body {
     </div>
 
     <div class="totals">
-      <div class="totals-label" id="nominaSemanaLabel">Nómina · semana actual</div>
+      <div class="week-nav">
+        <button class="week-nav-btn" id="weekPrev">◀</button>
+        <div class="totals-label" id="nominaSemanaLabel">Nómina · semana actual</div>
+        <button class="week-nav-btn" id="weekNext">▶</button>
+      </div>
       <div class="totals-value" id="nominaSaldo">$0</div>
       <div class="totals-split">
         <span>Días trabajados: <span id="nominaDias">0</span>/6</span>
@@ -837,6 +847,7 @@ function buildCard(p) {
     <div class="actions" id="actions-${p.id}" data-admin-only style="display:${isAdmin ? '' : 'none'}"></div>
     <div class="inline-form" id="sellForm-${p.id}">
       <input type="number" id="sellInput-${p.id}" value="${p.precio_lista}" min="0" />
+      <input type="date" id="sellDate-${p.id}" value="${todayKey()}" max="${todayKey()}" />
       <button class="mini-btn solid" data-action="confirmSell" data-id="${p.id}">Confirmar</button>
       <button class="mini-btn" data-action="cancelSell" data-id="${p.id}">Cancelar</button>
     </div>
@@ -875,7 +886,10 @@ document.getElementById('list').addEventListener('click', (e) => {
   else if (action === "confirmSell") {
     const val = document.getElementById(`sellInput-${id}`).value;
     if (!val || Number(val) < 0) return;
-    saveProduct(id, { ...p, estado: "vendido", precio_venta: Number(val), fecha_venta: todayStr(), fecha_venta_ts: Date.now() });
+    const fechaSel = document.getElementById(`sellDate-${id}`).value;
+    const fechaObj = fechaSel ? new Date(fechaSel + "T12:00:00") : new Date();
+    const fechaVentaStr = fechaObj.toLocaleDateString("es-MX", { day: "2-digit", month: "short", year: "numeric" });
+    saveProduct(id, { ...p, estado: "vendido", precio_venta: Number(val), fecha_venta: fechaVentaStr, fecha_venta_ts: fechaObj.getTime() });
   } else if (action === "openEdit") document.getElementById(`editForm-${id}`).classList.add('open');
   else if (action === "cancelEdit") document.getElementById(`editForm-${id}`).classList.remove('open');
   else if (action === "confirmEdit") {
@@ -1274,6 +1288,12 @@ function mondayOf(d) {
   return date;
 }
 function currentWeekKey() { return mondayOf(new Date()).toISOString().slice(0,10); }
+let weekOffset = 0;
+function viewedWeekKey() {
+  const d = mondayOf(new Date());
+  d.setDate(d.getDate() + weekOffset * 7);
+  return d.toISOString().slice(0,10);
+}
 function weekDaysKeys(weekKey) {
   const start = new Date(weekKey + "T00:00:00");
   const keys = [];
@@ -1297,12 +1317,14 @@ function calcularNomina(weekKey) {
 function renderNomina() {
   const el = document.getElementById('nominaSaldo');
   if (!el) return;
-  const weekKey = currentWeekKey();
+  const weekKey = viewedWeekKey();
   const { dias, saldoSemana, confirmado, saldoPorPagar } = calcularNomina(weekKey);
   const monday = new Date(weekKey + "T00:00:00");
   const saturday = new Date(monday); saturday.setDate(monday.getDate() + 5);
   const fmt = (d) => `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}`;
-  document.getElementById('nominaSemanaLabel').textContent = `Nómina · semana del ${fmt(monday)} al ${fmt(saturday)}`;
+  const etiqueta = weekOffset === 0 ? "semana actual" : (weekOffset === -1 ? "semana pasada" : `semana del ${fmt(monday)}`);
+  document.getElementById('nominaSemanaLabel').textContent = `Nómina · ${etiqueta} (${fmt(monday)}–${fmt(saturday)})`;
+  document.getElementById('weekNext').disabled = weekOffset >= 0;
   el.textContent = formatMoney(saldoPorPagar);
   document.getElementById('nominaDias').textContent = dias;
   document.getElementById('nominaPagado').textContent = formatMoney(confirmado);
@@ -1401,11 +1423,21 @@ document.querySelectorAll('#formaPagoPick .pick-opt').forEach(o => {
   });
 });
 
+document.getElementById('weekPrev').addEventListener('click', () => {
+  weekOffset -= 1;
+  renderNomina();
+});
+document.getElementById('weekNext').addEventListener('click', () => {
+  if (weekOffset >= 0) return;
+  weekOffset += 1;
+  renderNomina();
+});
+
 document.getElementById('nominaPagoBtn').addEventListener('click', () => {
   if (!requireAdmin()) return;
   if (chatUser !== "Mayra") { alert("Solo Mayra puede registrar un pago de nómina. Selecciona 'Mayra' arriba primero."); return; }
-  const { saldoPorPagar } = calcularNomina(currentWeekKey());
-  if (saldoPorPagar <= 0) { alert("Ya no hay saldo pendiente de pagar esta semana."); return; }
+  const { saldoPorPagar } = calcularNomina(viewedWeekKey());
+  if (saldoPorPagar <= 0) { alert("Ya no hay saldo pendiente de pagar en esta semana."); return; }
   document.getElementById('fMontoPago').value = saldoPorPagar;
   document.getElementById('pagoNominaForm').classList.add('open');
   document.getElementById('nominaPagoBtn').style.display = 'none';
@@ -1428,7 +1460,7 @@ document.getElementById('pagoNominaForm').addEventListener('submit', (e) => {
   }
   showSaving(true);
   pagosNominaRef.push({
-    monto, forma_pago: formaPagoSel, semana: currentWeekKey(), estado: "pendiente",
+    monto, forma_pago: formaPagoSel, semana: viewedWeekKey(), estado: "pendiente",
     creado_por: chatUser, fecha_creado: todayStr(), fecha_creado_ts: Date.now(),
     confirmado_por: null, fecha_confirmado: null, fecha_confirmado_ts: null,
     nota: nota || null
