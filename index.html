@@ -6,12 +6,13 @@
 <title>Bazar 69 · Panel</title>
 <link rel="manifest" href="manifest.json" />
 <meta name="theme-color" content="#2A2118" />
-<link rel="apple-touch-icon" href="icon-192-1.png" />
+<link rel="apple-touch-icon" href="icon-192.png" />
 <meta name="apple-mobile-web-app-capable" content="yes" />
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
 <meta name="apple-mobile-web-app-title" content="Bazar 69" />
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=IBM+Plex+Mono:wght@500;600;700&family=Inter:wght@400;500;600&display=swap');
 
@@ -266,6 +267,15 @@ body {
 .status-pendiente { background: #FBEBD2; color: #8A5A12; }
 .status-confirmado { background: #E3EEEC; color: #204F49; }
 .traspaso-actions { display: flex; gap: 6px; margin-top: 10px; flex-wrap: wrap; }
+
+/* Nómina */
+.pick-row { display: flex; gap: 8px; }
+.pick-opt {
+  flex: 1; padding: 10px 6px; text-align: center; border-radius: 9px;
+  border: 1.5px solid #D9C7A3; cursor: pointer; font-size: 12px; font-weight: 600;
+}
+.pick-opt.sel { background: #2A2118; color: #F7F2E7; border-color: #2A2118; }
+.status-ausente { background: #FBE4E0; color: #A63D2F; }
 </style>
 </head>
 <body>
@@ -286,6 +296,7 @@ body {
   <div class="nav-tabs">
     <button class="nav-tab active" data-section="inventario">Inventario</button>
     <button class="nav-tab" data-section="caja">Caja</button>
+    <button class="nav-tab" data-section="nomina">Nómina</button>
     <button class="nav-tab" data-section="bitacora">Bitácora</button>
     <button class="nav-tab" data-section="chat">Chat</button>
     <button class="nav-tab" data-section="notas">Notas</button>
@@ -380,6 +391,59 @@ body {
 
     <div class="report-subtitle">Historial confirmado</div>
     <div id="traspasosHistorial"></div>
+  </div>
+
+  <!-- NOMINA -->
+  <div class="section" id="section-nomina">
+    <div class="whoami" id="whoamiNomina">
+      <div class="who-opt" data-who="Sebas">Sebas</div>
+      <div class="who-opt" data-who="Mayra">Mayra</div>
+      <div class="who-opt" data-who="Papá">Papá</div>
+    </div>
+
+    <div class="totals">
+      <div class="totals-label" id="nominaSemanaLabel">Nómina · semana actual</div>
+      <div class="totals-value" id="nominaSaldo">$0</div>
+      <div class="totals-split">
+        <span>Días trabajados: <span id="nominaDias">0</span>/6</span>
+        <span>Pagado: <span id="nominaPagado">$0</span></span>
+      </div>
+    </div>
+    <div class="caja-note">$200 por día trabajado (Lun–Sáb) · máximo $1,200 por semana. Los días no trabajados se descuentan automáticamente.</div>
+
+    <div class="report-subtitle">Asistencia de la semana</div>
+    <div id="asistenciaList"></div>
+
+    <button class="add-btn" id="nominaPagoBtn">💳 Registrar pago a Sebastián</button>
+
+    <form class="form-card" id="pagoNominaForm">
+      <div class="field">
+        <label>Monto a pagar</label>
+        <input type="number" id="fMontoPago" min="1" required />
+      </div>
+      <div class="field">
+        <label>Forma de pago</label>
+        <div class="pick-row" id="formaPagoPick">
+          <div class="pick-opt sel" data-forma="efectivo">Efectivo</div>
+          <div class="pick-opt" data-forma="transferencia">Transferencia</div>
+          <div class="pick-opt" data-forma="saldo_caja">Del saldo en caja</div>
+        </div>
+      </div>
+      <div class="field">
+        <label>Nota (opcional)</label>
+        <input type="text" id="fNotaPago" placeholder="Ej. Pago parcial semana" />
+      </div>
+      <div class="form-actions">
+        <button type="button" class="btn-ghost" id="pagoCancelBtn">Cancelar</button>
+        <button type="submit" class="btn-primary">Registrar pago</button>
+      </div>
+    </form>
+
+    <div class="report-subtitle">Pagos pendientes de confirmar</div>
+    <div id="pagosPendientes"></div>
+
+    <div class="report-subtitle">Historial de pagos</div>
+    <div id="pagosHistorial"></div>
   </div>
 
   <!-- BITACORA -->
@@ -480,7 +544,7 @@ const firebaseConfig = {
   appId: "1:730883515964:web:e32982282cbfede14e4539"
 };
 
-let db, productsRef, bitacoraRef, chatRef, notasRef, traspasosRef, firebaseOk = false;
+let db, productsRef, bitacoraRef, chatRef, notasRef, traspasosRef, pagosNominaRef, firebaseOk = false;
 try {
   firebase.initializeApp(firebaseConfig);
   db = firebase.database();
@@ -489,7 +553,12 @@ try {
   chatRef = db.ref('chat');
   notasRef = db.ref('notas');
   traspasosRef = db.ref('traspasos');
+  pagosNominaRef = db.ref('pagos_nomina');
   firebaseOk = true;
+  firebase.auth().signInAnonymously().catch((e) => {
+    console.error("No se pudo iniciar sesión anónima:", e);
+    showError("No se pudo conectar de forma segura. Recarga la página.");
+  });
 } catch (e) {
   console.error("Firebase no cargó:", e);
 }
@@ -528,7 +597,7 @@ document.getElementById('notifyBtn').addEventListener('click', async () => {
   if (perm === 'granted') {
     notifyEnabled = true;
     localStorage.setItem('bazar69notify', '1');
-    new Notification("Bazar 69", { body: "Notificaciones activadas ✅", icon: "icon-192-1.png" });
+    new Notification("Bazar 69", { body: "Notificaciones activadas ✅", icon: "icon-192.png" });
   } else {
     alert("No se activaron las notificaciones. Puedes intentarlo de nuevo desde este botón.");
   }
@@ -539,9 +608,9 @@ function notify(title, body) {
   if (notifyEnabled && Notification.permission === 'granted') {
     try {
       if (navigator.serviceWorker && navigator.serviceWorker.controller) {
-        navigator.serviceWorker.ready.then(reg => reg.showNotification(title, { body, icon: "icon-192-1.png" }));
+        navigator.serviceWorker.ready.then(reg => reg.showNotification(title, { body, icon: "icon-192.png" }));
       } else {
-        new Notification(title, { body, icon: "icon-192-1.png" });
+        new Notification(title, { body, icon: "icon-192.png" });
       }
     } catch (e) {}
   }
@@ -567,11 +636,14 @@ function updateLockUI() {
   document.getElementById('whoami').style.display = isAdmin ? 'flex' : 'none';
   document.getElementById('whoamiCaja').style.display = isAdmin ? 'flex' : 'none';
   document.getElementById('cajaTraspasoBtn').style.display = isAdmin ? 'block' : 'none';
+  document.getElementById('whoamiNomina').style.display = isAdmin ? 'flex' : 'none';
+  document.getElementById('nominaPagoBtn').style.display = isAdmin ? 'block' : 'none';
   render();
   renderBitacora();
   renderChat();
   renderNotes();
   if (typeof renderCaja === "function") renderCaja();
+  if (typeof renderNomina === "function") renderNomina();
 }
 
 document.getElementById('lockBtn').addEventListener('click', () => {
@@ -850,6 +922,7 @@ if (firebaseOk) {
     bitacoraData = newData;
     bitacoraLoaded = true;
     renderBitacora();
+    if (typeof renderNomina === "function") renderNomina();
   });
 }
 
@@ -1076,6 +1149,241 @@ document.getElementById('traspasosPendientes').addEventListener('click', (e) => 
   }
 });
 
+// ---------- NOMINA (pago semanal a Sebastián) ----------
+const SALARIO_DIARIO = 200;
+const PAGO_SEMANAL_MAX = 1200;
+const NOMINA_DIAS = ['Lun','Mar','Mié','Jue','Vie','Sáb'];
+
+let pagosNominaData = {};
+let pagosNominaLoaded = false;
+let formaPagoSel = "efectivo";
+
+if (firebaseOk) {
+  pagosNominaRef.on('value', (snap) => {
+    const newData = snap.val() || {};
+    if (pagosNominaLoaded) {
+      Object.entries(newData).forEach(([id, p]) => {
+        const old = pagosNominaData[id];
+        if (!old && p.estado === "pendiente") {
+          notify("Pago de nómina — Bazar 69", `Mayra registró un pago de ${formatMoney(p.monto)} (${p.forma_pago})`);
+        } else if (old && old.estado === "pendiente" && p.estado === "confirmado") {
+          notify("Pago confirmado — Bazar 69", `Sebastián confirmó ${formatMoney(p.monto)}`);
+        }
+      });
+    }
+    pagosNominaData = newData;
+    pagosNominaLoaded = true;
+    renderNomina();
+  }, () => showError("No se pudo conectar con la base de datos."));
+}
+
+function mondayOf(d) {
+  const date = new Date(d);
+  const day = date.getDay();
+  const diff = day === 0 ? -6 : 1 - day;
+  date.setDate(date.getDate() + diff);
+  date.setHours(0,0,0,0);
+  return date;
+}
+function currentWeekKey() { return mondayOf(new Date()).toISOString().slice(0,10); }
+function weekDaysKeys(weekKey) {
+  const start = new Date(weekKey + "T00:00:00");
+  const keys = [];
+  for (let i = 0; i < 6; i++) {
+    const dt = new Date(start);
+    dt.setDate(start.getDate() + i);
+    keys.push(dt.toISOString().slice(0,10));
+  }
+  return keys;
+}
+
+function calcularNomina(weekKey) {
+  const dias = weekDaysKeys(weekKey).filter(k => bitacoraData[k] && bitacoraData[k].apertura).length;
+  const saldoSemana = Math.min(dias * SALARIO_DIARIO, PAGO_SEMANAL_MAX);
+  const entries = Object.entries(pagosNominaData).filter(([id, p]) => p.semana === weekKey);
+  const confirmado = entries.filter(([id, p]) => p.estado === "confirmado").reduce((s,[id,p]) => s + (p.monto || 0), 0);
+  const pendiente = entries.filter(([id, p]) => p.estado === "pendiente").reduce((s,[id,p]) => s + (p.monto || 0), 0);
+  return { dias, saldoSemana, confirmado, pendiente, saldoPorPagar: Math.max(0, saldoSemana - confirmado) };
+}
+
+function renderNomina() {
+  const el = document.getElementById('nominaSaldo');
+  if (!el) return;
+  const weekKey = currentWeekKey();
+  const { dias, saldoSemana, confirmado, saldoPorPagar } = calcularNomina(weekKey);
+  const monday = new Date(weekKey + "T00:00:00");
+  const saturday = new Date(monday); saturday.setDate(monday.getDate() + 5);
+  const fmt = (d) => `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}`;
+  document.getElementById('nominaSemanaLabel').textContent = `Nómina · semana del ${fmt(monday)} al ${fmt(saturday)}`;
+  el.textContent = formatMoney(saldoPorPagar);
+  document.getElementById('nominaDias').textContent = dias;
+  document.getElementById('nominaPagado').textContent = formatMoney(confirmado);
+
+  const asisCont = document.getElementById('asistenciaList');
+  asisCont.innerHTML = "";
+  const keys = weekDaysKeys(weekKey);
+  const now = new Date();
+  keys.forEach((k, i) => {
+    const worked = !!(bitacoraData[k] && bitacoraData[k].apertura);
+    const isFuture = new Date(k + "T23:59:59") > now;
+    const row = document.createElement('div');
+    row.className = "log-row";
+    const pill = isFuture && !worked
+      ? `<span class="meta">—</span>`
+      : (worked
+          ? `<span class="status-pill status-abierto">Trabajado</span>`
+          : `<span class="status-pill status-ausente">No trabajado</span>`);
+    row.innerHTML = `<span class="log-date">${NOMINA_DIAS[i]}</span>${pill}`;
+    asisCont.appendChild(row);
+  });
+
+  const entries = Object.entries(pagosNominaData);
+  const pendientes = entries.filter(([id,p]) => p.estado === "pendiente")
+    .sort((a,b) => (b[1].fecha_creado_ts || 0) - (a[1].fecha_creado_ts || 0));
+  const confirmados = entries.filter(([id,p]) => p.estado === "confirmado")
+    .sort((a,b) => (b[1].fecha_confirmado_ts || 0) - (a[1].fecha_confirmado_ts || 0))
+    .slice(0, 20);
+
+  const pendCont = document.getElementById('pagosPendientes');
+  pendCont.innerHTML = pendientes.length === 0
+    ? `<div class="empty">No hay pagos pendientes de confirmar.</div>`
+    : "";
+  pendientes.forEach(([id, p]) => pendCont.appendChild(buildPagoItem(id, p, true)));
+
+  const histCont = document.getElementById('pagosHistorial');
+  histCont.innerHTML = confirmados.length === 0
+    ? `<div class="empty">Todavía no hay pagos confirmados.</div>`
+    : "";
+  confirmados.forEach(([id, p]) => histCont.appendChild(buildPagoItem(id, p, false)));
+}
+
+function formaPagoLabel(f) {
+  if (f === "efectivo") return "Efectivo";
+  if (f === "transferencia") return "Transferencia";
+  if (f === "saldo_caja") return "Del saldo en caja";
+  return f;
+}
+
+function buildPagoItem(id, p, isPendiente) {
+  const div = document.createElement('div');
+  div.className = "traspaso-item";
+  const statusHtml = isPendiente
+    ? `<span class="status-pill status-pendiente">Pendiente</span>`
+    : `<span class="status-pill status-confirmado">Confirmado</span>`;
+  let actionsHtml = "";
+  if (isPendiente) {
+    const puedeConfirmar = chatUser === "Sebas";
+    const puedeCancelar = chatUser && chatUser === p.creado_por;
+    actionsHtml = `<div class="traspaso-actions">`;
+    if (puedeConfirmar) {
+      const label = p.forma_pago === "saldo_caja" ? "Confirmar" : "Confirmar recibido";
+      actionsHtml += `<button class="mini-btn solid" data-action="confirmarPago" data-id="${id}">${label}</button>`;
+    } else {
+      actionsHtml += `<span class="meta">Esperando confirmación de Sebastián</span>`;
+    }
+    if (puedeCancelar) {
+      actionsHtml += `<button class="mini-btn danger" data-action="cancelarPago" data-id="${id}">Cancelar</button>`;
+    }
+    actionsHtml += `</div>`;
+  }
+  div.innerHTML = `
+    <div class="traspaso-top">
+      <span class="traspaso-monto">${formatMoney(p.monto)}</span>
+      ${statusHtml}
+    </div>
+    <div class="traspaso-meta">${formaPagoLabel(p.forma_pago)} · de ${p.creado_por || "—"} · ${p.fecha_creado || ""}${p.nota ? ` · "${escapeHtml(p.nota)}"` : ""}</div>
+    ${!isPendiente ? `<div class="traspaso-meta">Confirmado por: ${p.confirmado_por || "—"} · ${p.fecha_confirmado || ""}</div>` : ""}
+    ${actionsHtml}
+  `;
+  return div;
+}
+
+document.querySelectorAll('#formaPagoPick .pick-opt').forEach(o => {
+  o.addEventListener('click', () => {
+    formaPagoSel = o.dataset.forma;
+    document.querySelectorAll('#formaPagoPick .pick-opt').forEach(x => x.classList.toggle('sel', x === o));
+  });
+});
+
+document.getElementById('nominaPagoBtn').addEventListener('click', () => {
+  if (!requireAdmin()) return;
+  if (chatUser !== "Mayra") { alert("Solo Mayra puede registrar un pago de nómina. Selecciona 'Mayra' arriba primero."); return; }
+  const { saldoPorPagar } = calcularNomina(currentWeekKey());
+  if (saldoPorPagar <= 0) { alert("Ya no hay saldo pendiente de pagar esta semana."); return; }
+  document.getElementById('fMontoPago').value = saldoPorPagar;
+  document.getElementById('pagoNominaForm').classList.add('open');
+  document.getElementById('nominaPagoBtn').style.display = 'none';
+});
+document.getElementById('pagoCancelBtn').addEventListener('click', () => {
+  document.getElementById('pagoNominaForm').classList.remove('open');
+  document.getElementById('nominaPagoBtn').style.display = 'block';
+  document.getElementById('fNotaPago').value = "";
+});
+document.getElementById('pagoNominaForm').addEventListener('submit', (e) => {
+  e.preventDefault();
+  if (!requireAdmin()) return;
+  if (chatUser !== "Mayra") { alert("Solo Mayra puede registrar un pago de nómina."); return; }
+  const monto = Number(document.getElementById('fMontoPago').value);
+  const nota = document.getElementById('fNotaPago').value.trim();
+  if (!monto || monto <= 0) return;
+  if (formaPagoSel === "saldo_caja") {
+    const { saldo } = calcularSaldoCaja();
+    if (monto > saldo) { alert(`No puedes tomar más de lo que hay en caja (${formatMoney(saldo)}).`); return; }
+  }
+  showSaving(true);
+  pagosNominaRef.push({
+    monto, forma_pago: formaPagoSel, semana: currentWeekKey(), estado: "pendiente",
+    creado_por: chatUser, fecha_creado: todayStr(), fecha_creado_ts: Date.now(),
+    confirmado_por: null, fecha_confirmado: null, fecha_confirmado_ts: null,
+    nota: nota || null
+  }).then(() => {
+    showSaving(false);
+    document.getElementById('pagoNominaForm').classList.remove('open');
+    document.getElementById('nominaPagoBtn').style.display = 'block';
+    document.getElementById('fNotaPago').value = "";
+  }).catch(() => { showSaving(false); showError("No se guardó el pago."); });
+});
+
+document.getElementById('pagosPendientes').addEventListener('click', (e) => {
+  const btn = e.target.closest('button[data-action]');
+  if (!btn) return;
+  if (!requireAdmin()) return;
+  const id = btn.dataset.id;
+  const p = pagosNominaData[id];
+  const action = btn.dataset.action;
+  if (action === "confirmarPago") {
+    if (chatUser !== "Sebas") { alert("Solo Sebastián puede confirmar este pago."); return; }
+    if (p.forma_pago === "saldo_caja") {
+      const { saldo } = calcularSaldoCaja();
+      if (p.monto > saldo) { alert(`Ya no hay suficiente saldo en caja (${formatMoney(saldo)}) para aplicar este pago.`); return; }
+    }
+    showSaving(true);
+    const updates = {
+      estado: "confirmado", confirmado_por: chatUser,
+      fecha_confirmado: todayStr(), fecha_confirmado_ts: Date.now()
+    };
+    const tasks = [pagosNominaRef.child(id).update(updates)];
+    if (p.forma_pago === "saldo_caja") {
+      tasks.push(traspasosRef.push({
+        monto: p.monto, estado: "confirmado",
+        creado_por: p.creado_por, fecha_creado: todayStr(), fecha_creado_ts: Date.now(),
+        confirmado_por: chatUser, fecha_confirmado: todayStr(), fecha_confirmado_ts: Date.now(),
+        nota: `Aplicado a nómina semana del ${p.semana}`
+      }));
+    }
+    Promise.all(tasks).then(() => showSaving(false))
+      .catch(() => { showSaving(false); showError("No se pudo confirmar el pago."); });
+  } else if (action === "cancelarPago") {
+    if (chatUser !== p.creado_por) { alert("Solo quien registró el pago puede cancelarlo."); return; }
+    if (confirm(`¿Cancelar el pago de ${formatMoney(p.monto)}?`)) {
+      showSaving(true);
+      pagosNominaRef.child(id).remove()
+        .then(() => showSaving(false))
+        .catch(() => { showSaving(false); showError("No se pudo cancelar el pago."); });
+    }
+  }
+});
+
 // ---------- CHAT ----------
 let chatUser = localStorage.getItem('bazar69chatUser') || null;
 if (chatUser) {
@@ -1087,6 +1395,7 @@ document.querySelectorAll('.who-opt').forEach(o => {
     localStorage.setItem('bazar69chatUser', chatUser);
     document.querySelectorAll('.who-opt').forEach(x => x.classList.toggle('sel', x.dataset.who === chatUser));
     if (typeof renderCaja === "function") renderCaja();
+    if (typeof renderNomina === "function") renderNomina();
   });
 });
 
