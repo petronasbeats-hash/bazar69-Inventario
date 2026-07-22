@@ -697,17 +697,12 @@ function notify(title, body) {
 updateNotifyBtn();
 // Cambia este PIN por el que quieras usando el editor de GitHub.
 const ADMIN_PIN = "6927";
-let isAdmin = sessionStorage.getItem('bazar69admin') === '1';
-
-// PIN privado, solo para Sebastián (distinto del PIN de edición general).
+// PIN privado, solo para Sebastián. También activa el modo edición,
+// pero además revela el botón de "Corregir horario" que nadie más ve.
 // Cámbialo por el que quieras usando el editor de GitHub.
 const SEBAS_PIN = "0619";
-function requireSebas() {
-  const pin = prompt("PIN privado:");
-  if (pin === null) return false;
-  if (pin !== SEBAS_PIN) { alert("PIN incorrecto."); return false; }
-  return true;
-}
+let isAdmin = sessionStorage.getItem('bazar69admin') === '1';
+let isSebas = sessionStorage.getItem('bazar69sebas') === '1';
 
 function updateLockUI() {
   const btn = document.getElementById('lockBtn');
@@ -726,8 +721,8 @@ function updateLockUI() {
   document.getElementById('cajaTraspasoBtn').style.display = isAdmin ? 'block' : 'none';
   document.getElementById('whoamiNomina').style.display = isAdmin ? 'flex' : 'none';
   document.getElementById('nominaPagoBtn').style.display = isAdmin ? 'block' : 'none';
-  document.getElementById('btnCorregir').style.display = 'none';
-  document.getElementById('corregirForm').classList.remove('open');
+  document.getElementById('btnCorregir').style.display = isSebas ? 'block' : 'none';
+  if (!isSebas) document.getElementById('corregirForm').classList.remove('open');
   render();
   renderBitacora();
   renderChat();
@@ -739,7 +734,9 @@ function updateLockUI() {
 document.getElementById('lockBtn').addEventListener('click', () => {
   if (isAdmin) {
     isAdmin = false;
+    isSebas = false;
     sessionStorage.removeItem('bazar69admin');
+    sessionStorage.removeItem('bazar69sebas');
     updateLockUI();
     return;
   }
@@ -747,6 +744,12 @@ document.getElementById('lockBtn').addEventListener('click', () => {
   if (pin === ADMIN_PIN) {
     isAdmin = true;
     sessionStorage.setItem('bazar69admin', '1');
+    updateLockUI();
+  } else if (pin === SEBAS_PIN) {
+    isAdmin = true;
+    isSebas = true;
+    sessionStorage.setItem('bazar69admin', '1');
+    sessionStorage.setItem('bazar69sebas', '1');
     updateLockUI();
   } else if (pin !== null) {
     alert("PIN incorrecto.");
@@ -1119,29 +1122,16 @@ function to12h(hhmm) {
 }
 
 document.getElementById('btnCorregir').addEventListener('click', () => {
-  if (!requireAdmin()) return;
-  if (!requireSebas()) return;
+  if (!isSebas) return;
   document.getElementById('corregirForm').classList.toggle('open');
 });
 
-// Gesto secreto: 5 toques sobre el título en menos de 3 segundos revela el botón.
-let tapCount = 0;
-let tapTimer = null;
-document.getElementById('appTitle').addEventListener('click', () => {
-  tapCount++;
-  if (tapTimer) clearTimeout(tapTimer);
-  tapTimer = setTimeout(() => { tapCount = 0; }, 3000);
-  if (tapCount >= 5) {
-    tapCount = 0;
-    clearTimeout(tapTimer);
-    if (isAdmin) document.getElementById('btnCorregir').style.display = 'block';
-  }
-});
 document.getElementById('corrCancelar').addEventListener('click', () => {
   document.getElementById('corregirForm').classList.remove('open');
 });
 document.getElementById('corrGuardar').addEventListener('click', () => {
-  if (!requireAdmin()) return;
+  if (!isSebas) return;
+  if (!firebaseOk) { alert("No hay conexión con la base de datos ahora mismo. Recarga la página e intenta de nuevo."); return; }
   const fecha = document.getElementById('corrFecha').value;
   const entrada = document.getElementById('corrEntrada').value;
   const salida = document.getElementById('corrSalida').value;
