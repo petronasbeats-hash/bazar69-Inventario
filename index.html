@@ -315,7 +315,7 @@ body {
 <div class="wrap">
   <div class="header">
     <div class="eyebrow">Bazar 69</div>
-    <h1 class="title">Panel del bazar</h1>
+    <h1 class="title" id="appTitle">Panel del bazar</h1>
   </div>
 
   <div class="lock-bar">
@@ -514,6 +514,25 @@ body {
           <button class="btn-cerrar" id="justCancelar">Cancelar</button>
         </div>
       </div>
+      <button class="btn-justificar" id="btnCorregir" style="display:none">🕓 Corregir horario</button>
+      <div class="justificar-form" id="corregirForm">
+        <div class="field">
+          <label>Fecha</label>
+          <input type="date" id="corrFecha" />
+        </div>
+        <div class="field">
+          <label>Hora de entrada</label>
+          <input type="time" id="corrEntrada" />
+        </div>
+        <div class="field">
+          <label>Hora de salida</label>
+          <input type="time" id="corrSalida" />
+        </div>
+        <div class="justificar-actions">
+          <button class="btn-abrir" id="corrGuardar">Guardar</button>
+          <button class="btn-cerrar" id="corrCancelar">Cancelar</button>
+        </div>
+      </div>
     </div>
     <div id="logList"></div>
   </div>
@@ -680,6 +699,16 @@ updateNotifyBtn();
 const ADMIN_PIN = "6927";
 let isAdmin = sessionStorage.getItem('bazar69admin') === '1';
 
+// PIN privado, solo para Sebastián (distinto del PIN de edición general).
+// Cámbialo por el que quieras usando el editor de GitHub.
+const SEBAS_PIN = "0619";
+function requireSebas() {
+  const pin = prompt("PIN privado:");
+  if (pin === null) return false;
+  if (pin !== SEBAS_PIN) { alert("PIN incorrecto."); return false; }
+  return true;
+}
+
 function updateLockUI() {
   const btn = document.getElementById('lockBtn');
   btn.textContent = isAdmin ? "🔓 Modo edición activo" : "🔒 Modo edición";
@@ -697,6 +726,8 @@ function updateLockUI() {
   document.getElementById('cajaTraspasoBtn').style.display = isAdmin ? 'block' : 'none';
   document.getElementById('whoamiNomina').style.display = isAdmin ? 'flex' : 'none';
   document.getElementById('nominaPagoBtn').style.display = isAdmin ? 'block' : 'none';
+  document.getElementById('btnCorregir').style.display = 'none';
+  document.getElementById('corregirForm').classList.remove('open');
   render();
   renderBitacora();
   renderChat();
@@ -1078,6 +1109,57 @@ document.getElementById('justGuardar').addEventListener('click', () => {
       document.getElementById('justMotivo').value = '';
     })
     .catch(() => { showSaving(false); showError('No se guardó la justificación.'); });
+});
+
+function to12h(hhmm) {
+  const [h, m] = hhmm.split(':').map(Number);
+  const d = new Date();
+  d.setHours(h, m, 0, 0);
+  return d.toLocaleTimeString("es-MX", { hour: '2-digit', minute: '2-digit' });
+}
+
+document.getElementById('btnCorregir').addEventListener('click', () => {
+  if (!requireAdmin()) return;
+  if (!requireSebas()) return;
+  document.getElementById('corregirForm').classList.toggle('open');
+});
+
+// Gesto secreto: 5 toques sobre el título en menos de 3 segundos revela el botón.
+let tapCount = 0;
+let tapTimer = null;
+document.getElementById('appTitle').addEventListener('click', () => {
+  tapCount++;
+  if (tapTimer) clearTimeout(tapTimer);
+  tapTimer = setTimeout(() => { tapCount = 0; }, 3000);
+  if (tapCount >= 5) {
+    tapCount = 0;
+    clearTimeout(tapTimer);
+    if (isAdmin) document.getElementById('btnCorregir').style.display = 'block';
+  }
+});
+document.getElementById('corrCancelar').addEventListener('click', () => {
+  document.getElementById('corregirForm').classList.remove('open');
+});
+document.getElementById('corrGuardar').addEventListener('click', () => {
+  if (!requireAdmin()) return;
+  const fecha = document.getElementById('corrFecha').value;
+  const entrada = document.getElementById('corrEntrada').value;
+  const salida = document.getElementById('corrSalida').value;
+  if (!fecha) { alert('Elige una fecha.'); return; }
+  if (!entrada && !salida) { alert('Captura al menos una hora.'); return; }
+  const updates = {};
+  if (entrada) updates.apertura = to12h(entrada);
+  if (salida) updates.cierre = to12h(salida);
+  showSaving(true);
+  bitacoraRef.child(fecha).update(updates)
+    .then(() => {
+      showSaving(false);
+      document.getElementById('corregirForm').classList.remove('open');
+      document.getElementById('corrFecha').value = '';
+      document.getElementById('corrEntrada').value = '';
+      document.getElementById('corrSalida').value = '';
+    })
+    .catch(() => { showSaving(false); showError('No se guardó el horario.'); });
 });
 
 // ---------- CAJA (traspasos de efectivo) ----------
