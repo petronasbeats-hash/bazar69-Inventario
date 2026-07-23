@@ -367,6 +367,10 @@ body {
         <input type="number" id="fPrice" placeholder="Ej. 450" min="0" required />
       </div>
       <div class="field">
+        <label>Cantidad de piezas</label>
+        <input type="number" id="fCantidad" placeholder="Ej. 1" min="1" value="1" required />
+      </div>
+      <div class="field">
         <label>Pertenece a</label>
         <div class="owner-pick">
           <div class="owner-opt sel-mayra" id="ownerMayra" data-owner="mayra">Mayra</div>
@@ -832,8 +836,8 @@ function render() {
   const disponibles = list.filter(p => p.estado === "disponible");
   const vendidos = list.filter(p => p.estado === "vendido");
 
-  const totalMayra = disponibles.filter(p => p.dueno === "mayra").reduce((s,p) => s + p.precio_lista, 0);
-  const totalPapa = disponibles.filter(p => p.dueno === "papa").reduce((s,p) => s + p.precio_lista, 0);
+  const totalMayra = disponibles.filter(p => p.dueno === "mayra").reduce((s,p) => s + p.precio_lista * (p.cantidad_disponible != null ? p.cantidad_disponible : (p.cantidad || 1)), 0);
+  const totalPapa = disponibles.filter(p => p.dueno === "papa").reduce((s,p) => s + p.precio_lista * (p.cantidad_disponible != null ? p.cantidad_disponible : (p.cantidad || 1)), 0);
 
   document.getElementById('totalGeneral').textContent = formatMoney(totalMayra + totalPapa);
   document.getElementById('totalMayra').textContent = formatMoney(totalMayra);
@@ -864,11 +868,14 @@ function render() {
 function buildCard(p) {
   const card = document.createElement('div');
   card.className = `card ${p.dueno}`;
+  const cantidad = p.cantidad || 1;
+  const disp = p.cantidad_disponible != null ? p.cantidad_disponible : (p.estado === "vendido" ? 0 : cantidad);
   let stampHtml = p.estado === "vendido" ? `<div class="stamp">VENDIDO</div>` : "";
   let priceExtra = "";
   if (p.estado === "vendido" && p.precio_venta !== p.precio_lista) {
     priceExtra = `<span class="meta">lista: ${formatMoney(p.precio_lista)}</span>`;
   }
+  const cantidadBadge = cantidad > 1 ? `<span class="meta">${disp} de ${cantidad} piezas disponibles</span>` : "";
   card.innerHTML = `
     ${stampHtml}
     <div class="card-top">
@@ -877,12 +884,16 @@ function buildCard(p) {
     </div>
     <div class="name">${p.nombre}</div>
     <div class="meta">Alta: ${p.fecha_alta}${p.fecha_venta ? ` · Vendido: ${p.fecha_venta}` : ""}</div>
+    ${cantidadBadge}
     <div class="price-row">
       <span class="price ${p.estado === 'vendido' ? 'sold' : ''}">${formatMoney(p.estado === 'vendido' ? p.precio_venta : p.precio_lista)}</span>
       ${priceExtra}
     </div>
     <div class="actions" id="actions-${p.id}" data-admin-only style="display:${isAdmin ? '' : 'none'}"></div>
     <div class="inline-form" id="sellForm-${p.id}">
+      ${disp > 1 ? `<label style="font-size:11.5px;color:#8A7A5E">Piezas vendidas (de ${disp} disponibles)</label>
+      <input type="number" id="sellPiezas-${p.id}" value="${disp}" min="1" max="${disp}" />` : ""}
+      <label style="font-size:11.5px;color:#8A7A5E">Precio total de esta venta</label>
       <input type="number" id="sellInput-${p.id}" value="${p.precio_lista}" min="0" />
       <input type="date" id="sellDate-${p.id}" value="${todayKey()}" max="${todayKey()}" />
       <button class="mini-btn solid" data-action="confirmSell" data-id="${p.id}">Confirmar</button>
@@ -923,10 +934,22 @@ document.getElementById('list').addEventListener('click', (e) => {
   else if (action === "confirmSell") {
     const val = document.getElementById(`sellInput-${id}`).value;
     if (!val || Number(val) < 0) return;
+    const dispActual = p.cantidad_disponible != null ? p.cantidad_disponible : (p.cantidad || 1);
+    const piezasInput = document.getElementById(`sellPiezas-${id}`);
+    const piezas = piezasInput ? Math.max(1, Math.min(dispActual, Number(piezasInput.value) || 1)) : dispActual;
     const fechaSel = document.getElementById(`sellDate-${id}`).value;
     const fechaObj = fechaSel ? new Date(fechaSel + "T12:00:00") : new Date();
     const fechaVentaStr = fechaObj.toLocaleDateString("es-MX", { day: "2-digit", month: "short", year: "numeric" });
-    saveProduct(id, { ...p, estado: "vendido", precio_venta: Number(val), fecha_venta: fechaVentaStr, fecha_venta_ts: fechaObj.getTime() });
+    const nuevaDisponible = dispActual - piezas;
+    const ventaId = "v" + Date.now();
+    const ventas = { ...(p.ventas || {}), [ventaId]: { piezas, monto: Number(val), fecha: fechaVentaStr, fecha_ts: fechaObj.getTime() } };
+    const totalVentasAcumulado = Object.values(ventas).reduce((s, v) => s + (v.monto || 0), 0);
+    const updates = {
+      ...p, ventas, cantidad_disponible: nuevaDisponible,
+      precio_venta: totalVentasAcumulado, fecha_venta: fechaVentaStr, fecha_venta_ts: fechaObj.getTime()
+    };
+    if (nuevaDisponible <= 0) updates.estado = "vendido";
+    saveProduct(id, updates);
   } else if (action === "openEdit") document.getElementById(`editForm-${id}`).classList.add('open');
   else if (action === "cancelEdit") document.getElementById(`editForm-${id}`).classList.remove('open');
   else if (action === "confirmEdit") {
@@ -934,7 +957,7 @@ document.getElementById('list').addEventListener('click', (e) => {
     if (!val || Number(val) <= 0) return;
     saveProduct(id, { ...p, precio_lista: Number(val) });
   } else if (action === "reactivate") {
-    saveProduct(id, { ...p, estado: "disponible", precio_venta: null, fecha_venta: null, fecha_venta_ts: null });
+    saveProduct(id, { ...p, estado: "disponible", precio_venta: null, fecha_venta: null, fecha_venta_ts: null, cantidad_disponible: p.cantidad || 1, ventas: null });
   } else if (action === "remove") {
     if (confirm(`¿Eliminar ${p.codigo} - ${p.nombre}?`)) {
       showSaving(true);
@@ -969,14 +992,15 @@ document.getElementById('addBtn').addEventListener('click', () => {
 document.getElementById('exportInvBtn').addEventListener('click', () => {
   const disponibles = Object.values(products).filter(p => p.estado === "disponible");
   if (disponibles.length === 0) { alert("No hay productos disponibles para exportar."); return; }
-  const header = "Codigo,Producto,Dueno,PrecioLista,FechaAlta\n";
+  const header = "Codigo,Producto,Dueno,PrecioLista,PiezasDisponibles,FechaAlta\n";
   const rows = disponibles
     .slice()
     .sort((a, b) => a.codigo.localeCompare(b.codigo))
     .map(p => {
       const nombre = `"${(p.nombre || "").replace(/"/g, '""')}"`;
       const dueno = p.dueno === "mayra" ? "Mayra" : "Papa";
-      return `${p.codigo},${nombre},${dueno},${p.precio_lista},${p.fecha_alta || ""}`;
+      const disp = p.cantidad_disponible != null ? p.cantidad_disponible : (p.cantidad || 1);
+      return `${p.codigo},${nombre},${dueno},${p.precio_lista},${disp},${p.fecha_alta || ""}`;
     }).join("\n");
   const csv = header + rows;
   const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
@@ -1008,10 +1032,13 @@ document.getElementById('formCard').addEventListener('submit', (e) => {
   if (!requireAdmin()) return;
   const name = document.getElementById('fName').value.trim();
   const price = document.getElementById('fPrice').value;
+  const cantidadInput = document.getElementById('fCantidad').value;
+  const cantidad = Math.max(1, Number(cantidadInput) || 1);
   if (!name || !price || Number(price) <= 0) return;
   const codigo = nextCode();
   const nuevo = {
     id: codigo, codigo, nombre: name, dueno: selectedOwner, precio_lista: Number(price),
+    cantidad, cantidad_disponible: cantidad,
     estado: "disponible", precio_venta: null, fecha_alta: todayStr(), fecha_venta: null
   };
   showSaving(true);
@@ -1020,6 +1047,7 @@ document.getElementById('formCard').addEventListener('submit', (e) => {
       showSaving(false);
       document.getElementById('fName').value = "";
       document.getElementById('fPrice').value = "";
+      document.getElementById('fCantidad').value = "1";
       document.getElementById('formCard').classList.remove('open');
       document.getElementById('addBtn').style.display = 'block';
     })
@@ -1126,10 +1154,7 @@ function buildCorteMessage(tk) {
 
   const start = new Date(tk + "T00:00:00");
   const end = new Date(start); end.setDate(end.getDate() + 1);
-  const vendidos = Object.values(products)
-    .filter(p => p.estado === "vendido")
-    .map(p => ({ p, fecha: getVentaDate(p) }))
-    .filter(x => x.fecha && x.fecha >= start && x.fecha < end);
+  const vendidos = getVentasEvents().filter(x => x.fecha_obj >= start && x.fecha_obj < end);
 
   let msg = `📋 *Corte del día — Bazar 69*\n${dateLabel}\n\n`;
   msg += `🔓 Apertura: ${entry.apertura || '—'}\n🔒 Cierre: ${entry.cierre || '—'}\n\n`;
@@ -1137,14 +1162,15 @@ function buildCorteMessage(tk) {
   if (vendidos.length === 0) {
     msg += `No se vendió nada hoy.`;
   } else {
-    const totalGeneral = vendidos.reduce((s, x) => s + (x.p.precio_venta || 0), 0);
-    const totalMayra = vendidos.filter(x => x.p.dueno === "mayra").reduce((s, x) => s + (x.p.precio_venta || 0), 0);
-    const totalPapa = vendidos.filter(x => x.p.dueno === "papa").reduce((s, x) => s + (x.p.precio_venta || 0), 0);
+    const totalGeneral = vendidos.reduce((s, x) => s + (x.monto || 0), 0);
+    const totalMayra = vendidos.filter(x => x.p.dueno === "mayra").reduce((s, x) => s + (x.monto || 0), 0);
+    const totalPapa = vendidos.filter(x => x.p.dueno === "papa").reduce((s, x) => s + (x.monto || 0), 0);
+    const totalPiezas = vendidos.reduce((s, x) => s + (x.piezas || 1), 0);
     msg += `💰 Total vendido: ${formatMoney(totalGeneral)}\n`;
     msg += `   Mayra: ${formatMoney(totalMayra)} · Papá: ${formatMoney(totalPapa)}\n`;
-    msg += `🛍️ ${vendidos.length} artículo${vendidos.length === 1 ? '' : 's'} vendido${vendidos.length === 1 ? '' : 's'}:\n`;
-    vendidos.forEach(({ p }) => {
-      msg += `• ${p.nombre} — ${formatMoney(p.precio_venta)} (${p.dueno === 'mayra' ? 'Mayra' : 'Papá'})\n`;
+    msg += `🛍️ ${totalPiezas} pieza${totalPiezas === 1 ? '' : 's'} vendida${totalPiezas === 1 ? '' : 's'}:\n`;
+    vendidos.forEach(({ p, piezas, monto }) => {
+      msg += `• ${p.nombre}${piezas > 1 ? ` (${piezas} pzas)` : ""} — ${formatMoney(monto)} (${p.dueno === 'mayra' ? 'Mayra' : 'Papá'})\n`;
     });
   }
   return msg;
@@ -1247,8 +1273,7 @@ if (firebaseOk) {
 }
 
 function calcularSaldoCaja() {
-  const vendidos = Object.values(products).filter(p => p.estado === "vendido");
-  const totalVendido = vendidos.reduce((s, p) => s + (p.precio_venta || 0), 0);
+  const totalVendido = getVentasEvents().reduce((s, x) => s + (x.monto || 0), 0);
   const entries = Object.entries(traspasosData);
   const totalConfirmado = entries
     .filter(([id, t]) => t.estado === "confirmado")
@@ -1869,6 +1894,24 @@ function getVentaDate(p) {
   return parseFechaVentaStr(p.fecha_venta);
 }
 
+// Junta cada venta (incluidas las parciales de artículos con varias piezas)
+// como un evento independiente, para que los reportes sumen bien.
+function getVentasEvents() {
+  const events = [];
+  Object.values(products).forEach(p => {
+    if (p.ventas) {
+      Object.values(p.ventas).forEach(v => {
+        if (!v.fecha_ts) return;
+        events.push({ p, piezas: v.piezas || 1, monto: v.monto || 0, fecha: v.fecha, fecha_ts: v.fecha_ts, fecha_obj: new Date(v.fecha_ts) });
+      });
+    } else if (p.estado === "vendido" && p.precio_venta != null) {
+      const fecha_obj = getVentaDate(p);
+      if (fecha_obj) events.push({ p, piezas: p.cantidad || 1, monto: p.precio_venta, fecha: p.fecha_venta, fecha_ts: fecha_obj.getTime(), fecha_obj });
+    }
+  });
+  return events;
+}
+
 function dateKey(d) {
   return d.toISOString().slice(0,10);
 }
@@ -1937,20 +1980,19 @@ function renderReportes() {
   }
   csvBtn.disabled = false;
 
-  const vendidos = Object.values(products)
-    .filter(p => p.estado === "vendido")
-    .map(p => ({ p, fecha: getVentaDate(p) }))
-    .filter(x => x.fecha && x.fecha >= start && x.fecha < end)
-    .sort((a,b) => b.fecha - a.fecha);
+  const vendidos = getVentasEvents()
+    .filter(x => x.fecha_obj >= start && x.fecha_obj < end)
+    .sort((a,b) => b.fecha_obj - a.fecha_obj);
 
-  const totalGeneral = vendidos.reduce((s,x) => s + (x.p.precio_venta || 0), 0);
-  const totalMayra = vendidos.filter(x => x.p.dueno === "mayra").reduce((s,x) => s + (x.p.precio_venta || 0), 0);
-  const totalPapa = vendidos.filter(x => x.p.dueno === "papa").reduce((s,x) => s + (x.p.precio_venta || 0), 0);
+  const totalGeneral = vendidos.reduce((s,x) => s + (x.monto || 0), 0);
+  const totalMayra = vendidos.filter(x => x.p.dueno === "mayra").reduce((s,x) => s + (x.monto || 0), 0);
+  const totalPapa = vendidos.filter(x => x.p.dueno === "papa").reduce((s,x) => s + (x.monto || 0), 0);
+  const totalPiezas = vendidos.reduce((s,x) => s + (x.piezas || 1), 0);
 
   document.getElementById('reportTotal').textContent = formatMoney(totalGeneral);
   document.getElementById('reportMayra').textContent = formatMoney(totalMayra);
   document.getElementById('reportPapa').textContent = formatMoney(totalPapa);
-  document.getElementById('reportCount').textContent = `${vendidos.length} artículo${vendidos.length === 1 ? '' : 's'} vendido${vendidos.length === 1 ? '' : 's'}`;
+  document.getElementById('reportCount').textContent = `${totalPiezas} pieza${totalPiezas === 1 ? '' : 's'} vendida${totalPiezas === 1 ? '' : 's'}`;
 
   // Desglose por día (solo útil cuando el periodo cubre más de un día)
   const diasBox = document.getElementById('reportDias');
@@ -1962,10 +2004,10 @@ function renderReportes() {
     diasTitulo.style.display = "block";
     const porDia = {};
     vendidos.forEach(x => {
-      const k = dateKey(x.fecha);
-      if (!porDia[k]) porDia[k] = { total: 0, count: 0, fechaDisplay: x.p.fecha_venta || k };
-      porDia[k].total += (x.p.precio_venta || 0);
-      porDia[k].count += 1;
+      const k = dateKey(x.fecha_obj);
+      if (!porDia[k]) porDia[k] = { total: 0, count: 0, fechaDisplay: x.fecha || k };
+      porDia[k].total += (x.monto || 0);
+      porDia[k].count += (x.piezas || 1);
     });
     const keys = Object.keys(porDia).sort((a,b) => b.localeCompare(a));
     if (keys.length === 0) {
@@ -1977,7 +2019,7 @@ function renderReportes() {
         row.className = "day-row";
         row.innerHTML = `
           <span class="day-date">${info.fechaDisplay}</span>
-          <span class="day-meta">${info.count} art. · ${formatMoney(info.total)}</span>
+          <span class="day-meta">${info.count} pza. · ${formatMoney(info.total)}</span>
         `;
         diasBox.appendChild(row);
       });
@@ -1997,10 +2039,10 @@ function renderReportes() {
     item.className = "report-item";
     item.innerHTML = `
       <div class="ri-top">
-        <span><span class="ri-code">${p.codigo}</span> · ${p.nombre}</span>
-        <span class="ri-price">${formatMoney(p.precio_venta)}</span>
+        <span><span class="ri-code">${p.codigo}</span> · ${p.nombre}${x.piezas > 1 ? ` (${x.piezas} pzas)` : ""}</span>
+        <span class="ri-price">${formatMoney(x.monto)}</span>
       </div>
-      <div class="ri-meta">${p.dueno === 'mayra' ? 'Mayra' : 'Papá'} · Vendido: ${p.fecha_venta || '—'}</div>
+      <div class="ri-meta">${p.dueno === 'mayra' ? 'Mayra' : 'Papá'} · Vendido: ${x.fecha || '—'}</div>
     `;
     listBox.appendChild(item);
   });
@@ -2020,18 +2062,16 @@ document.getElementById('rangoHasta').addEventListener('change', renderReportes)
 document.getElementById('reportCsvBtn').addEventListener('click', () => {
   const [start, end, label] = getReportRange();
   if (!start || !end) return;
-  const vendidos = Object.values(products)
-    .filter(p => p.estado === "vendido")
-    .map(p => ({ p, fecha: getVentaDate(p) }))
-    .filter(x => x.fecha && x.fecha >= start && x.fecha < end)
-    .sort((a,b) => a.fecha - b.fecha);
+  const vendidos = getVentasEvents()
+    .filter(x => x.fecha_obj >= start && x.fecha_obj < end)
+    .sort((a,b) => a.fecha_obj - b.fecha_obj);
 
-  const header = "Codigo,Producto,Dueno,PrecioLista,PrecioVenta,FechaVenta\n";
+  const header = "Codigo,Producto,Dueno,Piezas,MontoVenta,FechaVenta\n";
   const rows = vendidos.map(x => {
     const p = x.p;
     const nombre = `"${(p.nombre || "").replace(/"/g, '""')}"`;
     const dueno = p.dueno === "mayra" ? "Mayra" : "Papa";
-    return `${p.codigo},${nombre},${dueno},${p.precio_lista},${p.precio_venta},${p.fecha_venta || ""}`;
+    return `${p.codigo},${nombre},${dueno},${x.piezas},${x.monto},${x.fecha || ""}`;
   }).join("\n");
   const csv = header + rows;
 
