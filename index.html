@@ -979,7 +979,7 @@ document.getElementById('exportInvBtn').addEventListener('click', () => {
       return `${p.codigo},${nombre},${dueno},${p.precio_lista},${p.fecha_alta || ""}`;
     }).join("\n");
   const csv = header + rows;
-  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+  const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
@@ -2035,7 +2035,7 @@ document.getElementById('reportCsvBtn').addEventListener('click', () => {
   }).join("\n");
   const csv = header + rows;
 
-  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+  const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
