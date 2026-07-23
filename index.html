@@ -310,6 +310,7 @@ body {
 .pick-opt.sel { background: #2A2118; color: #F7F2E7; border-color: #2A2118; }
 .status-ausente { background: #FBE4E0; color: #A63D2F; }
 </style>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 </head>
 <body>
 <div class="wrap">
@@ -355,7 +356,7 @@ body {
     </div>
 
     <button class="add-btn" id="addBtn">+ Agregar producto</button>
-    <button class="add-btn" id="exportInvBtn">⬇️ Exportar inventario (CSV)</button>
+    <button class="add-btn" id="exportInvBtn">⬇️ Exportar inventario (Excel)</button>
 
     <form class="form-card" id="formCard">
       <div class="field">
@@ -607,7 +608,7 @@ body {
       <div class="report-count" id="reportCount">0 artículos vendidos</div>
     </div>
 
-    <button class="add-btn" id="reportCsvBtn">⬇️ Descargar CSV</button>
+    <button class="add-btn" id="reportCsvBtn">⬇️ Descargar Excel</button>
 
     <div class="report-subtitle" id="reportDiasTitulo" style="display:none">Desglose por día</div>
     <div id="reportDias"></div>
@@ -992,26 +993,21 @@ document.getElementById('addBtn').addEventListener('click', () => {
 document.getElementById('exportInvBtn').addEventListener('click', () => {
   const disponibles = Object.values(products).filter(p => p.estado === "disponible");
   if (disponibles.length === 0) { alert("No hay productos disponibles para exportar."); return; }
-  const header = "Codigo,Producto,Dueno,PrecioLista,PiezasDisponibles,FechaAlta\n";
   const rows = disponibles
     .slice()
     .sort((a, b) => a.codigo.localeCompare(b.codigo))
-    .map(p => {
-      const nombre = `"${(p.nombre || "").replace(/"/g, '""')}"`;
-      const dueno = p.dueno === "mayra" ? "Mayra" : "Papa";
-      const disp = p.cantidad_disponible != null ? p.cantidad_disponible : (p.cantidad || 1);
-      return `${p.codigo},${nombre},${dueno},${p.precio_lista},${disp},${p.fecha_alta || ""}`;
-    }).join("\n");
-  const csv = header + rows;
-  const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = `bazar69-inventario-${todayKey()}.csv`;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
+    .map(p => ({
+      Codigo: p.codigo,
+      Producto: p.nombre || "",
+      Dueno: p.dueno === "mayra" ? "Mayra" : "Papa",
+      PrecioLista: p.precio_lista,
+      PiezasDisponibles: p.cantidad_disponible != null ? p.cantidad_disponible : (p.cantidad || 1),
+      FechaAlta: p.fecha_alta || ""
+    }));
+  const ws = XLSX.utils.json_to_sheet(rows);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, "Inventario");
+  XLSX.writeFile(wb, `bazar69-inventario-${todayKey()}.xlsx`);
 });
 document.getElementById('cancelBtn').addEventListener('click', () => {
   document.getElementById('formCard').classList.remove('open');
@@ -2066,24 +2062,18 @@ document.getElementById('reportCsvBtn').addEventListener('click', () => {
     .filter(x => x.fecha_obj >= start && x.fecha_obj < end)
     .sort((a,b) => a.fecha_obj - b.fecha_obj);
 
-  const header = "Codigo,Producto,Dueno,Piezas,MontoVenta,FechaVenta\n";
-  const rows = vendidos.map(x => {
-    const p = x.p;
-    const nombre = `"${(p.nombre || "").replace(/"/g, '""')}"`;
-    const dueno = p.dueno === "mayra" ? "Mayra" : "Papa";
-    return `${p.codigo},${nombre},${dueno},${x.piezas},${x.monto},${x.fecha || ""}`;
-  }).join("\n");
-  const csv = header + rows;
-
-  const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = `bazar69-ventas-${reportPeriod}-${todayKey()}.csv`;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
+  const rows = vendidos.map(x => ({
+    Codigo: x.p.codigo,
+    Producto: x.p.nombre || "",
+    Dueno: x.p.dueno === "mayra" ? "Mayra" : "Papa",
+    Piezas: x.piezas,
+    MontoVenta: x.monto,
+    FechaVenta: x.fecha || ""
+  }));
+  const ws = XLSX.utils.json_to_sheet(rows);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, "Ventas");
+  XLSX.writeFile(wb, `bazar69-ventas-${reportPeriod}-${todayKey()}.xlsx`);
 });
 
 updateLockUI();
