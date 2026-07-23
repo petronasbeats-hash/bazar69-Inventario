@@ -355,6 +355,7 @@ body {
     </div>
 
     <button class="add-btn" id="addBtn">+ Agregar producto</button>
+    <button class="add-btn" id="exportInvBtn">⬇️ Exportar inventario (CSV)</button>
 
     <form class="form-card" id="formCard">
       <div class="field">
@@ -963,6 +964,30 @@ document.getElementById('addBtn').addEventListener('click', () => {
   if (!requireAdmin()) return;
   document.getElementById('formCard').classList.add('open');
   document.getElementById('addBtn').style.display = 'none';
+});
+
+document.getElementById('exportInvBtn').addEventListener('click', () => {
+  const disponibles = Object.values(products).filter(p => p.estado === "disponible");
+  if (disponibles.length === 0) { alert("No hay productos disponibles para exportar."); return; }
+  const header = "Codigo,Producto,Dueno,PrecioLista,FechaAlta\n";
+  const rows = disponibles
+    .slice()
+    .sort((a, b) => a.codigo.localeCompare(b.codigo))
+    .map(p => {
+      const nombre = `"${(p.nombre || "").replace(/"/g, '""')}"`;
+      const dueno = p.dueno === "mayra" ? "Mayra" : "Papa";
+      return `${p.codigo},${nombre},${dueno},${p.precio_lista},${p.fecha_alta || ""}`;
+    }).join("\n");
+  const csv = header + rows;
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `bazar69-inventario-${todayKey()}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
 });
 document.getElementById('cancelBtn').addEventListener('click', () => {
   document.getElementById('formCard').classList.remove('open');
