@@ -492,6 +492,7 @@ body {
         <button class="btn-abrir" id="btnAbrir">Marcar apertura</button>
         <button class="btn-cerrar" id="btnCerrar">Marcar cierre</button>
       </div>
+      <button class="btn-justificar" id="btnEnviarCorte">📲 Enviar corte del día a Mayra</button>
       <button class="btn-justificar" id="btnJustificar">📝 Justificar / marcar descanso de un día</button>
       <div class="justificar-form" id="justificarForm">
         <div class="field">
@@ -715,6 +716,7 @@ function updateLockUI() {
   document.getElementById('addNoteBtn').style.display = isAdmin ? 'block' : 'none';
   document.getElementById('btnAbrir').style.display = isAdmin ? 'block' : 'none';
   document.getElementById('btnCerrar').style.display = isAdmin ? 'block' : 'none';
+  document.getElementById('btnEnviarCorte').style.display = isAdmin ? 'block' : 'none';
   document.querySelector('.chat-input-row').style.display = isAdmin ? 'flex' : 'none';
   document.getElementById('whoami').style.display = isAdmin ? 'flex' : 'none';
   document.getElementById('whoamiCaja').style.display = isAdmin ? 'flex' : 'none';
@@ -1085,8 +1087,53 @@ document.getElementById('btnCerrar').addEventListener('click', () => {
   const tk = todayKey();
   showSaving(true);
   bitacoraRef.child(tk).update({ cierre: nowTime() })
-    .then(() => showSaving(false))
+    .then(() => { showSaving(false); enviarCorteWhatsapp(tk); })
     .catch(() => { showSaving(false); showError("No se guardó el cierre."); });
+});
+
+// Cambia este número por el de Mayra, con código de país, solo dígitos.
+// Ej. celular de México 221 123 4567 => "5212211234567"
+const MAYRA_WHATSAPP = "522226761513";
+
+function buildCorteMessage(tk) {
+  const entry = bitacoraData[tk] || {};
+  const dateLabel = new Date(tk + "T12:00:00").toLocaleDateString("es-MX", { weekday: 'long', day: '2-digit', month: 'long' });
+
+  const start = new Date(tk + "T00:00:00");
+  const end = new Date(start); end.setDate(end.getDate() + 1);
+  const vendidos = Object.values(products)
+    .filter(p => p.estado === "vendido")
+    .map(p => ({ p, fecha: getVentaDate(p) }))
+    .filter(x => x.fecha && x.fecha >= start && x.fecha < end);
+
+  let msg = `📋 *Corte del día — Bazar 69*\n${dateLabel}\n\n`;
+  msg += `🔓 Apertura: ${entry.apertura || '—'}\n🔒 Cierre: ${entry.cierre || '—'}\n\n`;
+
+  if (vendidos.length === 0) {
+    msg += `No se vendió nada hoy.`;
+  } else {
+    const totalGeneral = vendidos.reduce((s, x) => s + (x.p.precio_venta || 0), 0);
+    const totalMayra = vendidos.filter(x => x.p.dueno === "mayra").reduce((s, x) => s + (x.p.precio_venta || 0), 0);
+    const totalPapa = vendidos.filter(x => x.p.dueno === "papa").reduce((s, x) => s + (x.p.precio_venta || 0), 0);
+    msg += `💰 Total vendido: ${formatMoney(totalGeneral)}\n`;
+    msg += `   Mayra: ${formatMoney(totalMayra)} · Papá: ${formatMoney(totalPapa)}\n`;
+    msg += `🛍️ ${vendidos.length} artículo${vendidos.length === 1 ? '' : 's'} vendido${vendidos.length === 1 ? '' : 's'}:\n`;
+    vendidos.forEach(({ p }) => {
+      msg += `• ${p.nombre} — ${formatMoney(p.precio_venta)} (${p.dueno === 'mayra' ? 'Mayra' : 'Papá'})\n`;
+    });
+  }
+  return msg;
+}
+
+function enviarCorteWhatsapp(tk) {
+  const msg = buildCorteMessage(tk);
+  const url = `https://wa.me/${MAYRA_WHATSAPP}?text=${encodeURIComponent(msg)}`;
+  window.open(url, '_blank');
+}
+
+document.getElementById('btnEnviarCorte').addEventListener('click', () => {
+  if (!requireAdmin()) return;
+  enviarCorteWhatsapp(todayKey());
 });
 
 document.getElementById('btnJustificar').addEventListener('click', () => {
